@@ -92,6 +92,7 @@ long find_exec(FILE *stream)
                 len = 0;
             }
         } else {
+            if (feof(stream)) return EOF;
             fseek(stream, ipad(len), SEEK_CUR);
             len = 0;
         }
@@ -121,9 +122,9 @@ long find_exec(FILE *stream)
         else if (strcmp(type, "MAGS") == 0) fmt = FMT_MAGS;
         else if (strcmp(type, "ADVS") == 0) fmt = FMT_ADVS;
         else if (strcmp(type, "EXEC") == 0) fmt = FMT_EXEC;
-
-        if (!fmt) {
+        else {
             // not an executable chunk; skip to the next chunk
+            if (feof(stream)) return EOF;
             fseek(stream, ipad(len), SEEK_CUR);
             read += len;
             len = 0;
@@ -148,13 +149,12 @@ int main()
     s = malloc(sizeof(char) * buf);
     while (len) {
         if (buf > len) buf = len;
-        fprintf(stderr, "length %lu; reading/writing %lu byte(s)\n", len, buf);
+        //fprintf(stderr, "length %lu; reading/writing %lu byte(s)\n", len, buf);
         fread(s, buf, 1, stdin);
         fwrite(s, buf, 1, stdout);
         if (len >= buf) len -= buf;
         else len = 0;
     }
 
-    fprintf(stderr, "DONE\n");
     return EXIT_SUCCESS;
 }
