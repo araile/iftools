@@ -25,9 +25,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define FMT_ZCOD  1
+#define FMT_GLUL  2
+#define FMT_TAD2  3
+#define FMT_TAD3  4
+#define FMT_HUGO  5
+#define FMT_ALAN  6
+#define FMT_ADRI  7
+#define FMT_LEVE  8
+#define FMT_AGT   9
+#define FMT_MAGS 10
+#define FMT_ADVS 11
+#define FMT_EXEC 12
+
+#define ipad(i) (i + (i % 2))
+
 static int bigendian;
 
-void ub_init_endianness()
+void init_endianness()
 {
     int i = 1;
     char *p = (char *)&i;
@@ -38,7 +53,7 @@ void ub_init_endianness()
 /**
  * Read and return a 4-byte big-endian number from stream.
  */
-unsigned long ub_flong(FILE *stream)
+unsigned long flong(FILE *stream)
 {
     unsigned long i, j;
     char *a = (char *)&i, *b = (char *)&j;
@@ -55,22 +70,68 @@ unsigned long ub_flong(FILE *stream)
 }
 
 /**
- * Find the first 'FORM' chunk and seek to the start of its content.
+ * Find the blorb resources chunk and seek to the start of its content.
  * Return the content length, or EOF if not found.
  */
-long ub_find_form(FILE *stream)
+long find_ifrs(FILE *stream)
 {
-    char t[4];
+    char type[5] = "BLAP";
     unsigned long len = 0;
-    while (1) {
-        fread(t, 4, 1, stream);
-        printf("%lu\n", ub_flong(stream));
-        if (strcmp(t, "FORM") == 0) {
-            puts("Found FORM!");
+    while (!len) {
+        // look for a "FORM" chunk with record type "IFRS"
+        fread(type, 4, 1, stream);
+        len = flong(stream);
+        if (strcmp(type, "FORM") == 0 && len > 4) {
+            fread(type, 4, 1, stream);
+            len -= 4;
+            if (strcmp(type, "IFRS") != 0) {
+                fseek(stream, ipad(len), SEEK_CUR);
+                len = 0;
+            }
+        } else {
+            fseek(stream, ipad(len), SEEK_CUR);
+            len = 0;
         }
         if (feof(stream)) return EOF;
-        break;
     };
+    return len;
+}
+
+/**
+ * Find an executable resource chunk and seek to the start of its content.
+ * Return the content length, or EOF if not found.
+ */
+long find_exec(FILE *stream, unsigned long limit)
+{
+    char type[5] = "BORK";
+    unsigned long len = 0, read = 0;
+    int fmt = 0;
+    while (!len && read < limit) {
+        fread(type, 4, 1, stream);
+        len = flong(stream);
+        read += 4 + len;
+
+        if      (strcmp(type, "ZCOD") == 0) fmt = FMT_ZCOD;
+        else if (strcmp(type, "GLUL") == 0) fmt = FMT_GLUL;
+        else if (strcmp(type, "TAD2") == 0) fmt = FMT_TAD2;
+        else if (strcmp(type, "TAD3") == 0) fmt = FMT_TAD3;
+        else if (strcmp(type, "HUGO") == 0) fmt = FMT_HUGO;
+        else if (strcmp(type, "ALAN") == 0) fmt = FMT_ALAN;
+        else if (strcmp(type, "ADRI") == 0) fmt = FMT_ADRI;
+        else if (strcmp(type, "LEVE") == 0) fmt = FMT_LEVE;
+        else if (strcmp(type, "AGT ") == 0) fmt = FMT_AGT ;
+        else if (strcmp(type, "MAGS") == 0) fmt = FMT_MAGS;
+        else if (strcmp(type, "ADVS") == 0) fmt = FMT_ADVS;
+        else if (strcmp(type, "EXEC") == 0) fmt = FMT_EXEC;
+
+        if (!fmt) {
+            // not an executable chunk; skip to the next chunk
+            fseek(stream, ipad(len), SEEK_CUR);
+            read += len;
+            len = 0;
+        }
+        if (feof(stream)) return EOF;
+    }
     return len;
 }
 
@@ -79,9 +140,28 @@ long ub_find_form(FILE *stream)
  */
 int main()
 {
-    ub_init_endianness();
+    char *s;
+    unsigned long len, buf;
+    init_endianness();
 
-    ub_find_form(stdin);
+    len = find_ifrs(stdin);
+    if (!len || len == EOF) return EXIT_FAILURE;
 
+    len = find_exec(stdin, len);
+    if (!len || len == EOF) return EXIT_FAILURE;
+
+    // if we got this far, we found the executable chunk!
+    buf = 1024 * 5;
+    s = malloc(sizeof(char) * buf);
+    while (len) {
+        if (buf > len) buf = len;
+        fprintf(stderr, "length %lu; reading/writing %lu byte(s)\n", len, buf);
+        fread(s, buf, 1, stdin);
+        fwrite(s, buf, 1, stdout);
+        if (len >= buf) len -= buf;
+        else len = 0;
+    }
+
+    fprintf(stderr, "DONE\n");
     return EXIT_SUCCESS;
 }
