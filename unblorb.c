@@ -70,15 +70,18 @@ unsigned long flong(FILE *stream)
 }
 
 /**
+ * Find an executable resource chunk and seek to the start of its content.
+ * Return the content length, or EOF if not found.
  * Find the blorb resources chunk and seek to the start of its content.
  * Return the content length, or EOF if not found.
  */
-long find_ifrs(FILE *stream)
+long find_exec(FILE *stream)
 {
     char type[5] = "BLAP";
-    unsigned long len = 0;
+    unsigned long len = 0, read = 0, fmt = 0, limit;
+
+    // first find a "FORM" chunk with record type "IFRS"
     while (!len) {
-        // look for a "FORM" chunk with record type "IFRS"
         fread(type, 4, 1, stream);
         len = flong(stream);
         if (strcmp(type, "FORM") == 0 && len > 4) {
@@ -94,18 +97,13 @@ long find_ifrs(FILE *stream)
         }
         if (feof(stream)) return EOF;
     };
-    return len;
-}
 
-/**
- * Find an executable resource chunk and seek to the start of its content.
- * Return the content length, or EOF if not found.
- */
-long find_exec(FILE *stream, unsigned long limit)
-{
-    char type[5] = "BORK";
-    unsigned long len = 0, read = 0;
-    int fmt = 0;
+    if (len) {
+        limit = len;
+        len = 0;
+    } else return 0;
+
+    // now find an executable resource chunk within this FORM chunk
     while (!len && read < limit) {
         fread(type, 4, 1, stream);
         len = flong(stream);
@@ -135,23 +133,18 @@ long find_exec(FILE *stream, unsigned long limit)
     return len;
 }
 
-/**
- * And finally...
- */
 int main()
 {
     char *s;
     unsigned long len, buf;
     init_endianness();
 
-    len = find_ifrs(stdin);
+    // find the executable data
+    len = find_exec(stdin);
     if (!len || len == EOF) return EXIT_FAILURE;
 
-    len = find_exec(stdin, len);
-    if (!len || len == EOF) return EXIT_FAILURE;
-
-    // if we got this far, we found the executable chunk!
-    buf = 1024 * 5;
+    // write this data to stdout
+    buf = 1024 * 10;
     s = malloc(sizeof(char) * buf);
     while (len) {
         if (buf > len) buf = len;
